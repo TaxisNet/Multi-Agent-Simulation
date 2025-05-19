@@ -1,5 +1,4 @@
 import numpy as np
-import random
 import matplotlib.pyplot as plt
 import time
 from matplotlib.patches import Circle
@@ -9,16 +8,20 @@ from collections import deque
 
 # Configuration parameters
 CONFIG = {
-    'num_agents': 20,
-    'world_size': 50,
+    'num_agents': 50,
+    'world_size': 20,
     'max_steps': 1000,
-    'min_change_threshold': 0.5,                # Minimum change to continue simulation 
-    'agent_strategy': 'follow_line_segment',  #('follow_line_segment', 'follow_line_extension', 'random_movement')
+    'min_change_threshold': 0.05, # Minimum change DX (per agent) to continue simulation 
+    'agent_strategy': 'rule_2',  #('rule_1', 'rule_2', 'random_movement')
+    'collision_avoidance': 'field', #('reynolds', 'field')
+    
+    
     'agent_params': {
-        'velocity': 1.0,
-        'perception_radius': 3.0,
-        'repulsion_strength': 5.0,
-        'repulsion_radius': 0.5,
+        'velocity_gain': 0.5,
+        'max_velocity': 1.0,
+        'perception_radius': 2.0,
+        'repulsion_strength': 0.1,
+        'repulsion_radius': 1.0,
         'energy_loss': 0.05,
         'history_length': 20,
     }
@@ -28,7 +31,7 @@ class Agent:
     """
     Agent class for a multi-agent simulation with movement strategies and collision avoidance.
     """
-    def __init__(self, pos: np.ndarray, bounds: np.ndarray, vel: float = 1.0, per_rad: Optional[float] = None):
+    def __init__(self, pos: np.ndarray, bounds: np.ndarray, K_v: float = 1.0, max_vel: float = 2.0, per_rad: Optional[float] = None):
         """
         Initialize an agent.
         
@@ -41,8 +44,8 @@ class Agent:
         self.position = np.array(pos)
         self.color = np.random.choice(['red', 'green', 'blue'])
         self.perception_radius = per_rad if per_rad is not None else CONFIG['agent_params']['perception_radius']
-        self.velocity = vel
-        
+        self.K_v = CONFIG['agent_params']['velocity_gain']
+        self.max_velocity = CONFIG['agent_params']['max_velocity']
         # Movement parameters
         self.repulsion_strength = CONFIG['agent_params']['repulsion_strength']
         self.repulsion_radius = CONFIG['agent_params']['repulsion_radius']
@@ -53,8 +56,14 @@ class Agent:
         self.agentB = None
 
         # Collision avoidance method
-        self.collision_avoidance = self.reynolds_collision_avoidance
-        
+        if CONFIG['collision_avoidance'] == 'reynolds':
+            self.collision_avoidance = self.reynolds_collision_avoidance
+        elif CONFIG['collision_avoidance'] == 'field':
+            self.collision_avoidance = self.collision_avoidance_field
+        else:
+            # Default to field method
+            self.collision_avoidance = self.collision_avoidance_field
+
         # Energy loss on collision with boundaries (between 0.01 and 1.0)
         self.energy_loss = np.clip(CONFIG['agent_params']['energy_loss'], 0.01, 1.0)
         
@@ -91,9 +100,6 @@ class Agent:
         # Vector from current position to the closest point on the line segment
         PC_vec = self.agentA.position + t * AB_vec - self.position
         
-        # Normalize if length >= 1, otherwise return as is
-        if np.linalg.norm(PC_vec) >= 1:
-            return PC_vec / (np.linalg.norm(PC_vec) + 1e-6)
         return PC_vec
     
     def follow_line_extension(self):
@@ -114,9 +120,6 @@ class Agent:
         # Vector from current position to the extension point
         vec = self.agentA.position + t * AB_vec - self.position
         
-        # Normalize if length >= 1, otherwise return as is
-        if np.linalg.norm(vec) >= 1:
-            return vec / (np.linalg.norm(vec) + 1e-6) 
         return vec
     
     def random_movement(self):
@@ -128,15 +131,13 @@ class Agent:
         """
         return self.random_direction
     
-    def reynolds_collision_avoidance(self, all_agents, perception_radius=3.0, separation_weight=1.0):
+    def reynolds_collision_avoidance(self, all_agents):
         """
         Implements separation behavior from Reynolds' Boids model.
         
         Args:
             all_agents: List of all agents in the simulation
-            perception_radius: Radius within which other agents are considered
-            separation_weight: Strength of separation behavior
-            
+
         Returns:
             Separation vector
         """
@@ -150,7 +151,7 @@ class Agent:
             direction = self.position - other.position
             distance = np.linalg.norm(direction)
             
-            if distance < perception_radius and distance > 0:
+            if distance < self.repulsion_radius and distance > 0:
                 # Weight inversely by distance
                 separation_vector += direction / distance**2
                 neighbor_count += 1
@@ -160,15 +161,13 @@ class Agent:
             # Normalize to unit vector
             separation_vector = separation_vector / (np.linalg.norm(separation_vector) + 1e-6)
         
-        return separation_vector * separation_weight
+        return separation_vector * self.repulsion_strength
     
-    def collision_avoidance_field(self, all_agents, collision_radius=1.0, repulsion_strength=0.5):
+    def collision_avoidance_field(self, all_agents):
         """Add a repulsion vector to avoid collisions with other agents
         
         Args:
             all_agents: List of all agents in the simulation
-            collision_radius: Radius within which repulsion is applied
-            repulsion_strength: Strength of repulsion force
         
         Returns:
             Repulsion vector
@@ -184,13 +183,13 @@ class Agent:
             distance = np.linalg.norm(direction)
             
             # If within collision radius, add repulsion force
-            if distance < collision_radius:
+            if distance < self.repulsion_radius:
                 # Normalize and scale by inverse square of distance
-                repulsion = direction / (distance**2+ 1e-6) 
+                repulsion = direction / (distance**3+ 1e-6) 
                 repulsion_vector += repulsion
         repulsion_vector = repulsion_vector / (np.linalg.norm(repulsion_vector) + 1e-6)
 
-        return repulsion_strength * repulsion_vector
+        return self.repulsion_strength * repulsion_vector
         
 
     def update_position(self, vector, all_agents):
@@ -202,10 +201,15 @@ class Agent:
             all_agents: List of all agents for collision avoidance
         """
         # Calculate velocity with collision avoidance
-        vel = self.velocity * vector
+        vel = self.K_v * vector
         if self.collision_avoidance is not None:
             vel += self.collision_avoidance(all_agents)
-            
+
+        # Normalize velocity to max velocity 
+        norm_vel = np.linalg.norm(vel)
+        if norm_vel > self.max_velocity:
+            vel = (vel / norm_vel) * self.max_velocity
+
         # Store original velocity for reflection calculations
         original_vel = vel.copy()
             
@@ -242,24 +246,6 @@ class Agent:
         # Update position
         self.position = new_position
 
-        # #  OLD Handle boundary collisions
-        # if np.any(np.abs(new_position) > self.world_bounds):
-        #     # Calculate overshoot
-        #     if (new_position > self.world_bounds).any():
-        #         overshoot = new_position - self.world_bounds
-        #         indices = new_position > self.world_bounds
-        #     else:
-        #         overshoot = new_position + self.world_bounds
-        #         indices = new_position < -self.world_bounds
-            
-        #     # Apply bounce with energy loss only to components that cross boundary
-        #     bounce = np.zeros(2)
-        #     bounce[indices] = -(2 - self.energy_loss) * overshoot[indices]
-        #     new_position = new_position + bounce
-            
-        # Update position
-        self.position = new_position
-        
         # Store position in history for visualization
         self.history.append(self.position.copy())
     
@@ -273,14 +259,14 @@ class Agent:
         Returns:
             Movement vector
         """
-        if strategy == 'follow_line_segment':
+        if strategy == 'rule_1':
             return self.follow_line_segment()
-        elif strategy == 'follow_line_extension':
+        elif strategy == 'rule_2':
             return self.follow_line_extension()
         elif strategy == 'random_movement':
             return self.random_movement()
         else:
-            return self.follow_line_extension()  # Default
+            return self.follow_line_segment()  # Default
 
 
 def random_position(world_limit):
@@ -313,7 +299,7 @@ def visualize(agents, scatter, ax, step, show_trails=True, trail_length=10):
     if show_trails:
         for agent in agents:
             # Get recent history points (limited by trail_length)
-            history = agent.history[-trail_length:] if len(agent.history) > trail_length else agent.history
+            history = [agent.history[i] for i in range(-trail_length,0)] if len(agent.history) > trail_length else agent.history
             if len(history) > 1:
                 x_points = [p[0] for p in history]
                 y_points = [p[1] for p in history]
@@ -336,7 +322,6 @@ def visualize(agents, scatter, ax, step, show_trails=True, trail_length=10):
 def main():
     """Main simulation function"""
     # Set random seed for reproducibility
-    random.seed(78)
     np.random.seed(0)
     
     # Get configuration parameters
@@ -345,14 +330,14 @@ def main():
     world_lim = np.array([world_size, world_size])
     
     # Create agents
-    all_agents = [Agent(random_position(world_lim), world_lim, 
-                       vel=CONFIG['agent_params']['velocity']) for _ in range(N)]
+    all_agents = [Agent(random_position(world_lim), world_lim, max_vel=CONFIG['agent_params']['max_velocity']) for _ in range(N)]
     
     # Assign reference agents for strategies
     for i in range(N):
         indx = list(range(N))
         indx.remove(i)
-        A, B = random.sample(indx, 2)
+       
+        A, B = np.random.choice(indx, 2, replace=False)
         all_agents[i].set_other_agents(all_agents[A], all_agents[B])
     
     # Simulation parameters
@@ -405,10 +390,10 @@ def main():
     print(f"Execution time: {elapsed_time:.2f} seconds")
     print(f"Final movement magnitude: {change:.4f}")
     
-    # # Switch to interactive mode for final display
-    # plt.ioff()
-    # plt.suptitle("Agent Simulation - Final State", fontsize=16)
-    # plt.show()
+    # Switch to interactive mode for final display
+    plt.ioff()
+    plt.suptitle("Agent Simulation - Final State", fontsize=16)
+    plt.show()
 
 
 if __name__ == "__main__":
