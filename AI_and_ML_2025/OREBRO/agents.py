@@ -1,19 +1,23 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import time
 from matplotlib.patches import Circle
-from typing import List, Tuple, Optional
+from matplotlib.animation import FFMpegWriter 
+
+import time
+import datetime
+from typing import Optional
 from collections import deque
 
 
 # Configuration parameters
 CONFIG = {
+    'seed': 0,
+    'save_video': False,
     'num_agents': 50,
     'world_size': 20,
-    'max_steps': 1000,
+    'max_steps': 100,
     'min_change_threshold': 0.05, # Minimum change DX (per agent) to continue simulation 
     'agent_strategy': 'rule_2',  #('rule_1', 'rule_2', 'random_movement')
-    'collision_avoidance': 'field', #('reynolds', 'field')
     
     
     'agent_params': {
@@ -55,14 +59,8 @@ class Agent:
         self.agentA = None
         self.agentB = None
 
-        # Collision avoidance method
-        if CONFIG['collision_avoidance'] == 'reynolds':
-            self.collision_avoidance = self.reynolds_collision_avoidance
-        elif CONFIG['collision_avoidance'] == 'field':
-            self.collision_avoidance = self.collision_avoidance_field
-        else:
-            # Default to field method
-            self.collision_avoidance = self.collision_avoidance_field
+        # Default to field method
+        self.collision_avoidance = self.collision_avoidance_field
 
         # Energy loss on collision with boundaries (between 0.01 and 1.0)
         self.energy_loss = np.clip(CONFIG['agent_params']['energy_loss'], 0.01, 1.0)
@@ -322,7 +320,7 @@ def visualize(agents, scatter, ax, step, show_trails=True, trail_length=10):
 def main():
     """Main simulation function"""
     # Set random seed for reproducibility
-    np.random.seed(0)
+    np.random.seed(CONFIG['seed'])
     
     # Get configuration parameters
     N = CONFIG['num_agents']
@@ -365,14 +363,24 @@ def main():
            "Red/Green/Blue: Agent colors\nDashed circles: Agent perception radius", 
            fontsize=9, bbox=dict(facecolor='white', alpha=0.7))
     
-    # Run simulation
+    # Video saver initialization
+    if CONFIG['save_video']:
+        # Set up video writer
+        video_filename = f"multiagent_simulation_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        writer = FFMpegWriter(fps=20, metadata=dict(title='Agent Simulation', artist='Matplotlib'), 
+                              bitrate=1800)
+        writer.setup(fig, video_filename, dpi=100)
+
+    # Run simulation Loop
     step, change = 0, float('inf')
     start_time = time.time()
     
     while step <= step_limit and change > minimum_change:
         # Visualize current state
         visualize(all_agents, scatter, ax, step, show_trails=True)
-        
+
+        if CONFIG['save_video']:
+            writer.grab_frame()
        
         change = 0
         
@@ -384,16 +392,17 @@ def main():
             change += np.linalg.norm(vec)
         
         step += 1
+
+    if CONFIG['save_video']:
+        writer.finish()
+        print(f"Video saved as {video_filename}")
     # Display final state and statistics
     elapsed_time = time.time() - start_time
     print(f"Simulation completed in {step} steps")
     print(f"Execution time: {elapsed_time:.2f} seconds")
     print(f"Final movement magnitude: {change:.4f}")
     
-    # Switch to interactive mode for final display
-    plt.ioff()
-    plt.suptitle("Agent Simulation - Final State", fontsize=16)
-    plt.show()
+    
 
 
 if __name__ == "__main__":
