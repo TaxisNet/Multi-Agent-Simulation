@@ -11,20 +11,19 @@ from collections import deque
 
 # Configuration parameters
 CONFIG = {
-    'seed': 0,
+    'seed': None,
     'save_video': False,
     'num_agents': 50,
     'world_size': 20,
-    'max_steps': 100,
-    'min_change_threshold': 0.05, # Minimum change DX (per agent) to continue simulation 
+    'max_steps': 600,
+    'min_change_threshold':  0.1, # Minimum change DX (per agent) to continue simulation 
     'agent_strategy': 'rule_2',  #('rule_1', 'rule_2', 'random_movement')
     
-    
     'agent_params': {
-        'velocity_gain': 0.5,
-        'max_velocity': 1.0,
-        'perception_radius': 2.0,
-        'repulsion_strength': 0.1,
+        'perception_radius': None,
+        'velocity_gain': 0.6,
+        'max_velocity': 1.0 ,  # 'random' or float
+        'repulsion_strength': 0.2,
         'repulsion_radius': 1.0,
         'energy_loss': 0.05,
         'history_length': 20,
@@ -35,7 +34,7 @@ class Agent:
     """
     Agent class for a multi-agent simulation with movement strategies and collision avoidance.
     """
-    def __init__(self, pos: np.ndarray, bounds: np.ndarray, K_v: float = 1.0, max_vel: float = 2.0, per_rad: Optional[float] = None):
+    def __init__(self, pos: np.ndarray, bounds: np.ndarray, K_v: float = 1.0, max_vel: float = 2.0, max_velocity: float = None, repulsion_radius: Optional[float] = None, repulsion_strength: Optional[float] = None, perception_radius: Optional[float] = None):
         """
         Initialize an agent.
         
@@ -46,18 +45,23 @@ class Agent:
             per_rad: Perception radius
         """
         self.position = np.array(pos)
-        self.color = np.random.choice(['red', 'green', 'blue'])
-        self.perception_radius = per_rad if per_rad is not None else CONFIG['agent_params']['perception_radius']
-        self.K_v = CONFIG['agent_params']['velocity_gain']
-        self.max_velocity = CONFIG['agent_params']['max_velocity']
+        self.perception_radius = perception_radius
+        # self.color = np.random.choice(['red', 'green', 'blue', ])
+        self.color = np.random.choice(['blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan'])
+        # Controler parameters
+        self.K_v = K_v
+        self.max_velocity = max_vel
         # Movement parameters
-        self.repulsion_strength = CONFIG['agent_params']['repulsion_strength']
-        self.repulsion_radius = CONFIG['agent_params']['repulsion_radius']
+        self.repulsion_strength = repulsion_strength
+        self.repulsion_radius = repulsion_radius
         self.world_bounds = np.array(bounds)
         
         # Agent references for strategies
         self.agentA = None
         self.agentB = None
+
+        # Waypooint for random movement
+        self.waypoint = None
 
         # Default to field method
         self.collision_avoidance = self.collision_avoidance_field
@@ -80,6 +84,24 @@ class Agent:
         self.agentA = A
         self.agentB = B
 
+    def perception_logic(self):
+        # Preception based logic
+        if self.perception_radius is not None:
+            # Check if within perception radius
+            distance_to_A = np.linalg.norm(self.position - self.agentA.position)
+            distance_to_B = np.linalg.norm(self.position - self.agentB.position)
+
+            # If you can't see either agent, go to random waypoint
+            if distance_to_A > self.perception_radius and distance_to_B > self.perception_radius:
+                return self.random_movement()
+            # If you can see one agent, move towards it
+            elif distance_to_A < self.perception_radius and distance_to_B > self.perception_radius:
+                return self.agentA.position - self.position
+            elif distance_to_A > self.perception_radius and distance_to_B < self.perception_radius:
+                return self.agentB.position - self.position
+            
+            return None
+        
     def follow_line_segment(self):
         """
         Strategy 1: Follow the line segment between agents A and B.
@@ -88,6 +110,12 @@ class Agent:
         Returns:
             Movement vector
         """
+        # Do perception based logic rule, incase you cant see both agents
+        perception_logic_vector = self.perception_logic()
+        if perception_logic_vector is not None:
+            return perception_logic_vector
+            
+
         AB_vec = self.agentB.position - self.agentA.position
         PA_vec = self.agentA.position - self.position
         
@@ -108,6 +136,13 @@ class Agent:
         Returns:
             Movement vector
         """
+
+        # Do perception based logic rule, incase you cant see both agents
+        perception_logic_vector = self.perception_logic()
+        if perception_logic_vector is not None:
+            return perception_logic_vector
+            
+
         AB_vec = self.agentB.position - self.agentA.position
         PA_vec = self.agentA.position - self.position
         
@@ -127,39 +162,18 @@ class Agent:
         Returns:
             Random movement vector
         """
-        return self.random_direction
-    
-    def reynolds_collision_avoidance(self, all_agents):
-        """
-        Implements separation behavior from Reynolds' Boids model.
-        
-        Args:
-            all_agents: List of all agents in the simulation
-
-        Returns:
-            Separation vector
-        """
-        separation_vector = np.zeros(2)
-        neighbor_count = 0
-        
-        for other in all_agents:
-            if other is self:
-                continue
-                
-            direction = self.position - other.position
-            distance = np.linalg.norm(direction)
+        if self.waypoint is None:
+            # Generate a random waypoint within the world bounds
+            self.waypoint = random_position(self.world_bounds)
             
-            if distance < self.repulsion_radius and distance > 0:
-                # Weight inversely by distance
-                separation_vector += direction / distance**2
-                neighbor_count += 1
+        vec_to_waypoint = self.position - self.waypoint
+        distance_to_waypoint = np.linalg.norm(vec_to_waypoint)
         
-        if neighbor_count > 0:
-            separation_vector /= neighbor_count
-            # Normalize to unit vector
-            separation_vector = separation_vector / (np.linalg.norm(separation_vector) + 1e-6)
-        
-        return separation_vector * self.repulsion_strength
+        if distance_to_waypoint < 0.1:
+            # If close to waypoint, generate a new one
+            self.waypoint = random_position(self.world_bounds)
+            vec_to_waypoint = self.position - self.waypoint
+        return vec_to_waypoint
     
     def collision_avoidance_field(self, all_agents):
         """Add a repulsion vector to avoid collisions with other agents
@@ -308,7 +322,7 @@ def visualize(agents, scatter, ax, step, show_trails=True, trail_length=10):
         artist.remove()
     
     # Show perception radius for a few agents
-    if len(agents) > 0:
+    if len(agents) > 0 and agents[0].perception_radius is not None:
         for i in range(min(3, len(agents))):
             circle = Circle(agents[i].position, agents[i].perception_radius, 
                            fill=False, linestyle='--', alpha=0.3, color=agents[i].color)
@@ -326,9 +340,20 @@ def main():
     N = CONFIG['num_agents']
     world_size = CONFIG['world_size']
     world_lim = np.array([world_size, world_size])
+
+    
+        
     
     # Create agents
-    all_agents = [Agent(random_position(world_lim), world_lim, max_vel=CONFIG['agent_params']['max_velocity']) for _ in range(N)]
+    all_agents = [Agent(random_position(world_lim), 
+                        bounds = world_lim,
+                        perception_radius = CONFIG['agent_params']['perception_radius'],
+                        K_v=CONFIG['agent_params']['velocity_gain'], 
+                        max_vel= np.random.uniform(0.1, 4.0) if CONFIG['agent_params']['max_velocity'] == 'random' else CONFIG['agent_params']['max_velocity'],
+                        repulsion_strength = CONFIG['agent_params']['repulsion_strength'],
+                        repulsion_radius = CONFIG['agent_params']['repulsion_radius'],
+                        )
+                        for _ in range(N)]
     
     # Assign reference agents for strategies
     for i in range(N):
@@ -345,12 +370,18 @@ def main():
     # Setup visualization
     plt.ion()
     fig, ax = plt.subplots(figsize=(10, 10))
-    delta = 2
+    delta = 1
     ax.set_xlim(-world_lim[0]-delta, world_lim[0]+delta)
     ax.set_ylim(-world_lim[1]-delta, world_lim[1]+delta)
     
     # Add grid
     ax.grid(True, linestyle='--', alpha=0.7)
+
+    # Draw bold boundary lines at world limits
+    for x in [-world_lim[0], world_lim[0]]:
+        ax.plot([x, x], [-world_lim[1], world_lim[1]], color='blue', linewidth=2.5)
+    for y in [-world_lim[1], world_lim[1]]:
+        ax.plot([-world_lim[0], world_lim[0]], [y, y], color='black', linewidth=2.5)
     
     # Create scatter plot
     scatter = ax.scatter([a.position[0] for a in all_agents], 
@@ -360,7 +391,7 @@ def main():
     
     # Add legend
     ax.text(-world_lim[0]-0.5, world_lim[1]+1, 
-           "Red/Green/Blue: Agent colors\nDashed circles: Agent perception radius", 
+           "Colored Dots: Agent colors\nDashed circles: Agent Perception Radius", 
            fontsize=9, bbox=dict(facecolor='white', alpha=0.7))
     
     # Video saver initialization
