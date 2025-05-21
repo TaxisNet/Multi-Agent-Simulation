@@ -11,20 +11,20 @@ from collections import deque
 
 # Configuration parameters
 CONFIG = {
-    'seed': None,
+    'seed': 0,
     'save_video': False,
     'num_agents': 50,
     'world_size': 20,
-    'max_steps': 600,
+    'max_steps': 500,
     'min_change_threshold':  0.1, # Minimum change DX (per agent) to continue simulation 
-    'agent_strategy': 'rule_2',  #('rule_1', 'rule_2', 'random_movement')
+    'agent_strategy': 'rule_1',  #('rule_1', 'rule_2', 'random_movement')
     
     'agent_params': {
-        'perception_radius': None,
-        'velocity_gain': 0.6,
-        'max_velocity': 1.0 ,  # 'random' or float
-        'repulsion_strength': 0.2,
-        'repulsion_radius': 1.0,
+        'perception_radius': None,  # 'random' or float, None for inf perception
+        'velocity_gain': 0.2,
+        'max_velocity': 0.4,  # 'random' or float
+        'repulsion_strength': 0.05,
+        'repulsion_radius': 0.5,
         'energy_loss': 0.05,
         'history_length': 20,
     }
@@ -34,7 +34,10 @@ class Agent:
     """
     Agent class for a multi-agent simulation with movement strategies and collision avoidance.
     """
-    def __init__(self, pos: np.ndarray, bounds: np.ndarray, K_v: float = 1.0, max_vel: float = 2.0, max_velocity: float = None, repulsion_radius: Optional[float] = None, repulsion_strength: Optional[float] = None, perception_radius: Optional[float] = None):
+    def __init__(self, pos: np.ndarray, bounds: np.ndarray,
+                K_v: float = 1.0, max_vel: float = 2.0,
+                repulsion_radius: Optional[float] = None, repulsion_strength: Optional[float] = None,
+                 perception_radius: Optional[float] = None, energy_loss: float = 0.05, history_length: int = 20):
         """
         Initialize an agent.
         
@@ -43,7 +46,10 @@ class Agent:
             bounds: World boundaries as [width, height]
             vel: Movement velocity
             per_rad: Perception radius
+            rep_rad: Repulsion radius
+            rep_strength: Repulsion strength   
         """
+
         self.position = np.array(pos)
         self.perception_radius = perception_radius
         # self.color = np.random.choice(['red', 'green', 'blue', ])
@@ -67,10 +73,9 @@ class Agent:
         self.collision_avoidance = self.collision_avoidance_field
 
         # Energy loss on collision with boundaries (between 0.01 and 1.0)
-        self.energy_loss = np.clip(CONFIG['agent_params']['energy_loss'], 0.01, 1.0)
+        self.energy_loss = np.clip(energy_loss, 0.01, 1.0)
         
         # Movement history for visualization (fixed size)
-        history_length = CONFIG['agent_params']['history_length']
         self.history = deque(maxlen=history_length)
         self.history.append(self.position.copy())
 
@@ -166,13 +171,13 @@ class Agent:
             # Generate a random waypoint within the world bounds
             self.waypoint = random_position(self.world_bounds)
             
-        vec_to_waypoint = self.position - self.waypoint
+        vec_to_waypoint =  self.waypoint - self.position
         distance_to_waypoint = np.linalg.norm(vec_to_waypoint)
         
         if distance_to_waypoint < 0.1:
             # If close to waypoint, generate a new one
             self.waypoint = random_position(self.world_bounds)
-            vec_to_waypoint = self.position - self.waypoint
+            vec_to_waypoint =  self.waypoint - self.position
         return vec_to_waypoint
     
     def collision_avoidance_field(self, all_agents):
@@ -331,8 +336,10 @@ def visualize(agents, scatter, ax, step, show_trails=True, trail_length=10):
     plt.pause(0.05)
 
 
-def main():
+def main(CONFIG=CONFIG):
     """Main simulation function"""
+
+
     # Set random seed for reproducibility
     np.random.seed(CONFIG['seed'])
     
@@ -347,11 +354,13 @@ def main():
     # Create agents
     all_agents = [Agent(random_position(world_lim), 
                         bounds = world_lim,
-                        perception_radius = CONFIG['agent_params']['perception_radius'],
+                        perception_radius = np.random.uniform(0.1, 5.0) if CONFIG['agent_params']['perception_radius'] == 'random' else CONFIG['agent_params']['perception_radius'],
                         K_v=CONFIG['agent_params']['velocity_gain'], 
-                        max_vel= np.random.uniform(0.1, 4.0) if CONFIG['agent_params']['max_velocity'] == 'random' else CONFIG['agent_params']['max_velocity'],
+                        max_vel= np.random.uniform(0.05, 3.0) if CONFIG['agent_params']['max_velocity'] == 'random' else CONFIG['agent_params']['max_velocity'],
                         repulsion_strength = CONFIG['agent_params']['repulsion_strength'],
                         repulsion_radius = CONFIG['agent_params']['repulsion_radius'],
+                        energy_loss= CONFIG['agent_params']['energy_loss'],
+                        history_length=CONFIG['agent_params']['history_length']
                         )
                         for _ in range(N)]
     
