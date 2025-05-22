@@ -3,7 +3,6 @@ Develop a simulation of the human swarm exercise in a programming language of yo
 The simulation should reproduce the following positioning scenarios:
 a) Every agent X selects two other agents randomly: A and B (and memorizes them). During the experiments agent X always tries to position itself between A and B. Every agent does the same. Decision making of the agents must be strictly local.
 b) Initial setup is the same as in a). The difference is that X now tries to position itself so that B is between A and X (“X hides behind B, so that A cannot attack/see...).
-c) Would anything change if agents are allowed to communicate? Can you image a scenario in which
-communication would be important?
+c) Would anything change if agents are allowed to communicate? Can you image a scenario in which communication would be important?
 
 Prepare a report documenting your model(s) as well as as give details of your simulator implementation and the experiments that you ran. Analyse and discuss the simulation results comparing different parameter settings. (ca 2000 - 3000 words)

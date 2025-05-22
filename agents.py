@@ -53,7 +53,7 @@ class Agent:
         self.position = np.array(pos)
         self.perception_radius = perception_radius
         # self.color = np.random.choice(['red', 'green', 'blue', ])
-        self.color = np.random.choice(['blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan'])
+        self.color = np.random.choice(['blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive', 'magenta', 'yellow'])
         # Controler parameters
         self.K_v = K_v
         self.max_velocity = max_vel
@@ -329,6 +329,7 @@ def visualize(agents, scatter, ax, step, show_trails=True, trail_length=10):
     # Show perception radius for a few agents
     if len(agents) > 0 and agents[0].perception_radius is not None:
         for i in range(min(3, len(agents))):
+        # for i in range(len(agents)):
             circle = Circle(agents[i].position, agents[i].perception_radius, 
                            fill=False, linestyle='--', alpha=0.3, color=agents[i].color)
             ax.add_patch(circle)
@@ -354,7 +355,7 @@ def main(CONFIG=CONFIG):
     # Create agents
     all_agents = [Agent(random_position(world_lim), 
                         bounds = world_lim,
-                        perception_radius = np.random.uniform(0.1, 5.0) if CONFIG['agent_params']['perception_radius'] == 'random' else CONFIG['agent_params']['perception_radius'],
+                        perception_radius = np.random.uniform(0.5, 10.0) if CONFIG['agent_params']['perception_radius'] == 'random' else CONFIG['agent_params']['perception_radius'],
                         K_v=CONFIG['agent_params']['velocity_gain'], 
                         max_vel= np.random.uniform(0.05, 3.0) if CONFIG['agent_params']['max_velocity'] == 'random' else CONFIG['agent_params']['max_velocity'],
                         repulsion_strength = CONFIG['agent_params']['repulsion_strength'],
